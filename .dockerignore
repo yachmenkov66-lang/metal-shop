@@ -1,0 +1,17 @@
+node_modules
+.next
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+npm-debug.log*
+yarn-error.log*
+scraper/.venv
+scraper/__pycache__
+**/__pycache__
+**/.DS_Store
+*.log
+tasks
+.vscode
+.idea

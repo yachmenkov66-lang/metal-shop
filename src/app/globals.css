@@ -1,26 +1,74 @@
 @import "tailwindcss";
 
+/* ============ Дизайн-система: «современный индустриальный» ============
+   Графит + белый + жжёно-оранжевый акцент. Сдержанно и продающе. */
+@theme {
+  --color-ink: #0f172a; /* основной тёмный (slate-900) — шапка, текст */
+  --color-ink-deep: #020617; /* slate-950 — самый тёмный (футер) */
+  --color-accent: #ea580c; /* burnt orange — CTA, цены, активные элементы */
+  --color-accent-hover: #c2410c;
+  --color-accent-soft: #fff7ed; /* мягкий оранжевый фон (orange-50) */
+  --color-steel: #64748b; /* сталь (slate-500) — вторичный текст */
+  --color-line: #e2e8f0; /* границы (slate-200) */
+  --color-surface: #f8fafc; /* светлая подложка секций (slate-50) */
+
+  --radius-card: 0.875rem;
+
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
+}
+
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #0f172a;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: var(--color-accent);
+    color: #fff;
+  }
+  /* Аккуратный фокус для доступности */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.02em;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Ограничивающий контейнер (обычный класс — @utility нельзя вкладывать в @media) */
+.container-x {
+  margin-inline: auto;
+  max-width: 80rem; /* max-w-7xl */
+  padding-inline: 1rem;
+}
+@media (min-width: 640px) {
+  .container-x {
+    padding-inline: 1.5rem;
+  }
+}
+
+/* Тонкая «металлическая» сетка для hero-фона */
+@utility grid-bg {
+  background-image: linear-gradient(
+      to right,
+      rgba(148, 163, 184, 0.08) 1px,
+      transparent 1px
+    ),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: 44px 44px;
 }

@@ -1,0 +1,53 @@
+# Продакшн-стек для VPS: БД + веб-приложение + парсер (по требованию через cron).
+# Запуск:   docker compose -f docker-compose.prod.yml up -d --build
+# Парсер:   docker compose -f docker-compose.prod.yml run --rm scraper   (вызывается из cron раз в сутки)
+name: metalshop
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: metal
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-metal}
+      POSTGRES_DB: metalshop
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metal -d metalshop"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://metal:${DB_PASSWORD:-metal}@db:5432/metalshop?schema=public"
+      JWT_SECRET: ${JWT_SECRET:?Задайте JWT_SECRET в .env (минимум 32 случайных символа)}
+      DEFAULT_MARKUP_PERCENT: ${DEFAULT_MARKUP_PERCENT:-10}
+      NODE_ENV: production
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+  # Парсер не стартует автоматически (profile "scrape"); его запускает cron раз в сутки:
+  #   docker compose -f docker-compose.prod.yml run --rm scraper
+  scraper:
+    build: ./scraper
+    restart: "no"
+    profiles: ["scrape"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://metal:${DB_PASSWORD:-metal}@db:5432/metalshop?schema=public"
+      SCRAPER_ENGINE: ${SCRAPER_ENGINE:-curl_cffi}
+      PRICE_INCLUDES_VAT: ${PRICE_INCLUDES_VAT:-true}
+      DEFAULT_MARKUP_PERCENT: ${DEFAULT_MARKUP_PERCENT:-10}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+volumes:
+  pgdata:

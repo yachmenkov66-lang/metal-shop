@@ -1,0 +1,222 @@
+// Metal-shop database schema
+// Ключевая идея ценообразования: храним basePrice (цена-источник с mc.ru) и
+// finalPrice (с наценкой) раздельно. Наценка резолвится по приоритету:
+// product.markupPercent ?? category.markupPercent ?? Setting "default_markup" (10%).
+// Это позволяет менять наценку на товар/категорию без повторного парсинга.
+
+generator client {
+  provider      = "prisma-client-js"
+  // native — для локального Mac; debian — для продакшн-образа Docker (node:bookworm-slim, OpenSSL 3)
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Каталог ----------
+
+model Category {
+  id          Int        @id @default(autoincrement())
+  slug        String     @unique
+  name        String
+  description String?
+  imageUrl    String?
+  iconKey     String? // ключ иконки для UI (rebar, beam, sheet, pipe, angle, channel...)
+  sortOrder   Int        @default(0)
+
+  // Наценка на уровне категории (null = брать глобальную). Проценты: 10.00 = +10%
+  markupPercent Decimal? @db.Decimal(5, 2)
+
+  parentId Int?
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryTree")
+
+  products Product[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([parentId])
+  @@index([sortOrder])
+}
+
+model Product {
+  id         Int     @id @default(autoincrement())
+  externalId String  @unique // идентификатор товара на mc.ru — для идемпотентного upsert
+  slug       String  @unique
+  name       String
+  categoryId Int
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  // Характеристики металлопроката
+  size       String? // типоразмер: "12", "100x100x8", "57x3.5"
+  steelGrade String? // марка стали: "А500С", "Ст3сп", "09Г2С"
+  gost       String? // ГОСТ / ТУ
+  unit       String  @default("т") // единица: т (тонна), м, шт, м2
+
+  // Ценообразование
+  basePrice     Decimal  @db.Decimal(12, 2) // цена-источник (mc.ru), за unit
+  markupPercent Decimal? @db.Decimal(5, 2) // наценка на конкретный товар (null = из категории/глобальной)
+  finalPrice    Decimal  @db.Decimal(12, 2) // итоговая цена с наценкой (хранимая)
+  priceWithVat  Boolean  @default(true) // включает ли цена НДС
+
+  // Наличие
+  inStock   Boolean @default(true)
+  stockText String? // "в наличии", "под заказ", "12.5 т"
+
+  sourceUrl     String?
+  lastScrapedAt DateTime?
+  isActive      Boolean   @default(true) // если товар пропал из источника — гасим, не удаляем
+
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoryId])
+  @@index([isActive])
+  @@index([name])
+}
+
+// ---------- Пользователи и аутентификация ----------
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String
+  lastName     String // фамилия
+  firstName    String // имя
+  phone        String
+  telegram     String?
+  role         UserRole @default(CUSTOMER)
+
+  // B2B-реквизиты (опционально, для счёта)
+  companyName String?
+  inn         String?
+
+  cart   Cart?
+  orders Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------- Корзина ----------
+
+model Cart {
+  id        Int        @id @default(autoincrement())
+  userId    Int        @unique
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model CartItem {
+  id        Int     @id @default(autoincrement())
+  cartId    Int
+  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Decimal @db.Decimal(12, 3) @default(1) // дробные тонны/метры
+
+  @@unique([cartId, productId])
+}
+
+// ---------- Заказы (B2B заявка / счёт) ----------
+
+enum OrderStatus {
+  NEW // новая заявка
+  PROCESSING // в работе у менеджера
+  INVOICED // выставлен счёт
+  COMPLETED // выполнен
+  CANCELLED // отменён
+}
+
+model Order {
+  id          Int         @id @default(autoincrement())
+  orderNumber String      @unique // "2026-000123"
+  userId      Int? // null = заявка без регистрации
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  status      OrderStatus @default(NEW)
+
+  // Снимок контактов на момент заявки
+  customerName String
+  phone        String
+  email        String?
+  telegram     String?
+  companyName  String?
+  inn          String?
+  comment      String?
+
+  totalAmount Decimal     @db.Decimal(14, 2)
+  items       OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id        Int      @id @default(autoincrement())
+  orderId   Int
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId Int?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  // Снимок товара на момент заказа (цена/название фиксируются)
+  productName String
+  unit        String
+  quantity    Decimal @db.Decimal(12, 3)
+  unitPrice   Decimal @db.Decimal(12, 2)
+  lineTotal   Decimal @db.Decimal(14, 2)
+}
+
+// ---------- Отзывы ----------
+
+model Review {
+  id         Int      @id @default(autoincrement())
+  authorName String
+  rating     Int // 4..5
+  text       String
+  source     String? // "Яндекс Карты", "2ГИС", "Google"
+  isPublished Boolean @default(true)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@index([isPublished, sortOrder])
+}
+
+// ---------- Настройки и операционные логи ----------
+
+model Setting {
+  key   String @id
+  value String
+}
+
+enum ScrapeStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+model ScrapeRun {
+  id               Int          @id @default(autoincrement())
+  startedAt        DateTime     @default(now())
+  finishedAt       DateTime?
+  status           ScrapeStatus @default(RUNNING)
+  productsFound    Int          @default(0)
+  productsUpserted Int          @default(0)
+  categoriesFound  Int          @default(0)
+  errorText        String?
+}

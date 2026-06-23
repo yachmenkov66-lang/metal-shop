@@ -1,0 +1,21 @@
+# --- HTTP / TLS-обход ---
+# curl_cffi имперсонирует TLS-фингерпринт Chrome (curl-impersonate).
+# Это ГЛАВНЫЙ инструмент обхода TLS-фильтра mc.ru: обычные requests/httpx
+# зависают на handshake, а curl_cffi проходит. См. README.
+curl_cffi>=0.7.0
+
+# --- Парсинг HTML ---
+beautifulsoup4>=4.12
+lxml>=5.0
+
+# --- БД ---
+# psycopg3 (binary — без локального libpq), raw SQL, параметризованные запросы.
+psycopg[binary]>=3.1
+
+# --- Ретраи/бэкофф ---
+tenacity>=8.2
+
+# --- Фолбэк-движок (ОПЦИОНАЛЬНО) ---
+# Playwright нужен только как гарантированный обход TLS, если curl_cffi не справится.
+# Раскомментируйте и выполните `playwright install chromium` ВРУЧНУЮ при необходимости.
+# playwright>=1.44
